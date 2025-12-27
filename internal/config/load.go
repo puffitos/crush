@@ -698,28 +698,28 @@ func GlobalConfig() string {
 	return filepath.Join(home.Dir(), ".config", appName, fmt.Sprintf("%s.json", appName))
 }
 
-// GlobalConfigData returns the path to the main data directory for the application.
-// this config is used when the app overrides configurations instead of updating the global config.
-func GlobalConfigData() string {
+// GlobalDataDir returns the global data directory for the application.
+func GlobalDataDir() string {
 	if crushData := os.Getenv("CRUSH_GLOBAL_DATA"); crushData != "" {
-		return filepath.Join(crushData, fmt.Sprintf("%s.json", appName))
+		return crushData
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName))
+		return filepath.Join(xdgDataHome, appName)
 	}
-
-	// return the path to the main data directory
-	// for windows, it should be in `%LOCALAPPDATA%/crush/`
-	// for linux and macOS, it should be in `$HOME/.local/share/crush/`
 	if runtime.GOOS == "windows" {
 		localAppData := cmp.Or(
 			os.Getenv("LOCALAPPDATA"),
 			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
 		)
-		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
+		return filepath.Join(localAppData, appName)
 	}
+	return filepath.Join(home.Dir(), ".local", "share", appName)
+}
 
-	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
+// GlobalConfigData returns the path to the main data directory for the application.
+// this config is used when the app overrides configurations instead of updating the global config.
+func GlobalConfigData() string {
+	return filepath.Join(GlobalDataDir(), fmt.Sprintf("%s.json", appName))
 }
 
 func assignIfNil[T any](ptr **T, val T) {
