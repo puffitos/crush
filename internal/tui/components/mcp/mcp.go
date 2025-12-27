@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
 	"github.com/charmbracelet/crush/internal/config"
@@ -58,6 +59,7 @@ func RenderMCPList(opts RenderOptions) []string {
 		icon := t.ItemOfflineIcon
 		description := ""
 		extraContent := []string{}
+		var errorLines []string // Error lines to render below the status
 
 		if state, exists := mcpStates[l.Name]; exists {
 			switch state.State {
@@ -84,10 +86,18 @@ func RenderMCPList(opts RenderOptions) []string {
 				}
 			case mcp.StateError:
 				icon = t.ItemErrorIcon
+				description = t.S().Subtle.Render("error")
 				if state.Error != nil {
-					description = t.S().Subtle.Render(fmt.Sprintf("error: %s", state.Error.Error()))
-				} else {
-					description = t.S().Subtle.Render("error")
+					// Calculate available width for error wrapping (account for indent)
+					errorIndent := "    " // 4 spaces for visual indent under the MCP name
+					errorWidth := min(opts.MaxWidth-len(errorIndent), 40)
+					// Wrap the error message to fit the available width
+					wrappedError := ansi.Wordwrap(state.Error.Error(), errorWidth, "")
+					for _, line := range strings.Split(wrappedError, "\n") {
+						if line != "" {
+							errorLines = append(errorLines, errorIndent+t.S().Error.Render(line))
+						}
+					}
 				}
 			}
 		} else if l.MCP.Disabled {
@@ -105,6 +115,9 @@ func RenderMCPList(opts RenderOptions) []string {
 				opts.MaxWidth,
 			),
 		)
+
+		// Append error lines below the status line
+		mcpList = append(mcpList, errorLines...)
 	}
 
 	return mcpList
