@@ -20,6 +20,8 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/oauth"
+	mcpoauth "github.com/charmbracelet/crush/internal/oauth/mcp"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/version"
@@ -27,9 +29,11 @@ import (
 )
 
 var (
-	sessions = csync.NewMap[string, *mcp.ClientSession]()
-	states   = csync.NewMap[string, ClientInfo]()
-	broker   = pubsub.NewBroker[Event]()
+	sessions       = csync.NewMap[string, *mcp.ClientSession]()
+	states         = csync.NewMap[string, ClientInfo]()
+	broker         = pubsub.NewBroker[Event]()
+	tokenProviders = csync.NewMap[string, *OAuthTokenProvider]()
+	tokenStore     *TokenStore
 )
 
 // State represents the current state of an MCP client
@@ -135,6 +139,9 @@ func Close() error {
 
 // Initialize initializes MCP clients based on the provided configuration.
 func Initialize(ctx context.Context, permissions permission.Service, cfg *config.Config) {
+	// Initialize the token store for OAuth token persistence (uses global data directory)
+	tokenStore = NewTokenStore()
+
 	var wg sync.WaitGroup
 	// Initialize states for all configured MCPs
 	for name, m := range cfg.MCP {
@@ -262,7 +269,7 @@ func createSession(ctx context.Context, name string, m config.MCPConfig, resolve
 	mcpCtx, cancel := context.WithCancel(ctx)
 	cancelTimer := time.AfterFunc(timeout, cancel)
 
-	transport, err := createTransport(mcpCtx, m, resolver)
+	transport, err := createTransport(mcpCtx, name, m, resolver, tokenStore)
 	if err != nil {
 		updateState(name, StateError, err, nil, Counts{})
 		slog.Error("error creating mcp client", "error", err, "name", name)
@@ -339,7 +346,7 @@ func maybeTimeoutErr(err error, timeout time.Duration) error {
 	return err
 }
 
-func createTransport(ctx context.Context, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
+func createTransport(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver, tokenStore *TokenStore) (mcp.Transport, error) {
 	switch m.Type {
 	case config.MCPStdio:
 		command, err := resolver.ResolveValue(m.Command)
@@ -358,11 +365,8 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 		if strings.TrimSpace(m.URL) == "" {
 			return nil, fmt.Errorf("mcp http config requires a non-empty 'url' field")
 		}
-		client := &http.Client{
-			Transport: &headerRoundTripper{
-				headers: m.ResolvedHeaders(),
-			},
-		}
+		transport := buildHTTPTransport(ctx, name, m, tokenStore)
+		client := &http.Client{Transport: transport}
 		return &mcp.StreamableClientTransport{
 			Endpoint:   m.URL,
 			HTTPClient: client,
@@ -371,11 +375,8 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 		if strings.TrimSpace(m.URL) == "" {
 			return nil, fmt.Errorf("mcp sse config requires a non-empty 'url' field")
 		}
-		client := &http.Client{
-			Transport: &headerRoundTripper{
-				headers: m.ResolvedHeaders(),
-			},
-		}
+		transport := buildHTTPTransport(ctx, name, m, tokenStore)
+		client := &http.Client{Transport: transport}
 		return &mcp.SSEClientTransport{
 			Endpoint:   m.URL,
 			HTTPClient: client,
@@ -385,15 +386,97 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 	}
 }
 
+// buildHTTPTransport creates an http.RoundTripper with appropriate middleware.
+// It stacks OAuth (if configured or discovered) on top of static headers.
+func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, tokenStore *TokenStore) http.RoundTripper {
+	transport := http.DefaultTransport
+
+	// Add static headers layer
+	if len(m.Headers) > 0 {
+		transport = &headerRoundTripper{
+			headers: m.ResolvedHeaders(),
+			base:    transport,
+		}
+	}
+
+	// Skip OAuth if explicitly disabled
+	if !m.OAuth.IsEnabled() {
+		slog.Debug("OAuth disabled for MCP", "name", name)
+		return transport
+	}
+
+	// Resolve OAuth configuration (explicit or auto-discovered)
+	oauthCfg := resolveOAuthConfig(ctx, m)
+
+	// Add OAuth layer if we have configuration
+	if oauthCfg != nil && oauthCfg.AuthURL != "" && oauthCfg.TokenURL != "" {
+		provider, err := NewOAuthTokenProvider(name, *oauthCfg, tokenStore)
+		if err != nil {
+			slog.Error("Failed to create OAuth provider", "mcp", name, "error", err)
+			return transport // Fall back to non-OAuth transport
+		}
+
+		// Set up the auth function immediately so it's available when needed
+		mcpName := name // capture for closure
+		provider.SetAuthFunc(func(ctx context.Context, cfg mcpoauth.Config) (*oauth.Token, error) {
+			slog.Info("Starting OAuth authorization flow", "mcp", mcpName)
+
+			opts := mcpoauth.DefaultAuthFlowOptions()
+			opts.OnAuthURL = func(url string) {
+				slog.Info("Please authorize in your browser", "mcp", mcpName, "url", url)
+			}
+
+			return mcpoauth.StartAuthFlow(ctx, cfg, opts)
+		})
+		slog.Debug("OAuth auth function configured for MCP", "name", name)
+
+		registerTokenProvider(name, provider)
+
+		transport = NewOAuthRoundTripper(provider, transport)
+	}
+
+	return transport
+}
+
+// resolveOAuthConfig returns the OAuth configuration for an MCP server.
+// It first checks for explicit configuration, then attempts auto-discovery.
+// Returns nil if no OAuth configuration is available.
+func resolveOAuthConfig(ctx context.Context, m config.MCPConfig) *mcpoauth.Config {
+	// Check for explicit configuration
+	if m.OAuth != nil && m.OAuth.ClientID != "" {
+		return &mcpoauth.Config{
+			ClientID:     m.OAuth.ClientID,
+			ClientSecret: m.OAuth.ClientSecret,
+			AuthURL:      m.OAuth.AuthURL,
+			TokenURL:     m.OAuth.TokenURL,
+			Scopes:       m.OAuth.Scopes,
+			RedirectURI:  m.OAuth.RedirectURI,
+		}
+	}
+
+	// Try auto-discovery
+	cfg, err := mcpoauth.DiscoverOAuth(ctx, m.URL)
+	if err != nil || cfg == nil {
+		return nil
+	}
+
+	return cfg
+}
+
 type headerRoundTripper struct {
 	headers map[string]string
+	base    http.RoundTripper
 }
 
 func (rt headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	for k, v := range rt.headers {
 		req.Header.Set(k, v)
 	}
-	return http.DefaultTransport.RoundTrip(req)
+	base := rt.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(req)
 }
 
 func mcpTimeout(m config.MCPConfig) time.Duration {
@@ -410,4 +493,9 @@ func stdioCheck(old *exec.Cmd) error {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", err, string(out))
+}
+
+// registerTokenProvider registers a token provider for an MCP server.
+func registerTokenProvider(name string, provider *OAuthTokenProvider) {
+	tokenProviders.Set(name, provider)
 }
