@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/config"
 )
 
 // MCPOAuthData holds OAuth tokens and client credentials for an MCP server.
@@ -29,12 +29,8 @@ type TokenStore struct {
 
 // NewTokenStore creates a new TokenStore using the global data directory.
 func NewTokenStore() *TokenStore {
-	dataDir := os.Getenv("CRUSH_GLOBAL_DATA")
-	if dataDir == "" {
-		dataDir = filepath.Join(home.Dir(), ".local", "share", "crush")
-	}
 	return &TokenStore{
-		path: filepath.Join(dataDir, "mcp.json"),
+		path: filepath.Join(config.GlobalDataDir(), "mcp.json"),
 	}
 }
 
