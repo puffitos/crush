@@ -182,6 +182,34 @@ const (
 	MCPHttp  MCPType = "http"
 )
 
+// MCPOAuthConfig holds OAuth 2.0 configuration for MCP servers.
+type MCPOAuthConfig struct {
+	// Enabled controls whether OAuth 2.0 authentication is enabled for this MCP server.
+	// Defaults to true. If enabled and no explicit configuration is provided, OAuth will be auto-discovered.
+	Enabled *bool `json:"enabled,omitempty" jsonschema:"description=Enable OAuth 2.0 authentication (defaults to true with auto-discovery),default=true"`
+	// ClientID is the OAuth client identifier.
+	ClientID string `json:"client_id,omitempty" jsonschema:"description=OAuth 2.0 client identifier"`
+	// ClientSecret is the OAuth client secret (optional for public clients using PKCE).
+	ClientSecret string `json:"client_secret,omitempty" jsonschema:"description=OAuth 2.0 client secret (optional for public clients using PKCE)"`
+	// AuthURL is the authorization endpoint URL.
+	AuthURL string `json:"authorization_url,omitempty" jsonschema:"description=OAuth 2.0 authorization endpoint URL,format=uri"`
+	// TokenURL is the token endpoint URL.
+	TokenURL string `json:"token_url,omitempty" jsonschema:"description=OAuth 2.0 token endpoint URL,format=uri"`
+	// Scopes is the list of OAuth scopes to request.
+	Scopes []string `json:"scopes,omitempty" jsonschema:"description=OAuth 2.0 scopes to request"`
+	// RedirectURI is the redirect URI for the OAuth callback (defaults to localhost).
+	RedirectURI string `json:"redirect_uri,omitempty" jsonschema:"description=OAuth 2.0 redirect URI for callback,format=uri,default=http://localhost:19876/callback"`
+}
+
+// IsEnabled returns whether OAuth is enabled for this config.
+// Defaults to true if not explicitly set.
+func (c *MCPOAuthConfig) IsEnabled() bool {
+	if c == nil || c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
 type MCPConfig struct {
 	Command       string            `json:"command,omitempty" jsonschema:"description=Command to execute for stdio MCP servers,example=npx"`
 	Env           map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set for the MCP server"`
@@ -194,6 +222,11 @@ type MCPConfig struct {
 
 	// TODO: maybe make it possible to get the value from the env
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
+
+	// OAuth holds OAuth 2.0 configuration for SSE/HTTP MCP servers that require authentication.
+	// If not specified, OAuth will be auto-discovered from the server's well-known endpoint.
+	// Set oauth.enabled to false to disable OAuth authentication.
+	OAuth *MCPOAuthConfig `json:"oauth,omitempty" jsonschema:"description=OAuth 2.0 configuration for SSE/HTTP MCP servers,default=true."`
 }
 
 type LSPConfig struct {
