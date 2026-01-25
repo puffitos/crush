@@ -26,6 +26,7 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 		client = &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment,
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout:     90 * time.Second,
