@@ -998,10 +998,6 @@ func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
 	a.systemPrompt.Set(systemPrompt)
 }
 
-func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
-	a.systemPrompt = systemPrompt
-}
-
 func (a *sessionAgent) Model() Model {
 	return a.largeModel.Get()
 }

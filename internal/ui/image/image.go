@@ -211,12 +211,6 @@ func (e Encoding) Transmit(id string, img image.Image, cs CellSize, cols, rows i
 			VirtualPlacement: true,
 			Quite:            1,
 			Chunk:            true,
-			ChunkFormatter: func(chunk string) string {
-				if tmux {
-					return ansi.TmuxPassthrough(chunk)
-				}
-				return chunk
-			},
 		}); err != nil {
 			slog.Error("failed to encode image for kitty graphics", "err", err)
 			return uiutil.InfoMsg{
