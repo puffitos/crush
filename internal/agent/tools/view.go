@@ -35,13 +35,6 @@ type ViewPermissionsParams struct {
 	Limit    int    `json:"limit"`
 }
 
-type viewTool struct {
-	lspClients  *csync.Map[string, *lsp.Client]
-	workingDir  string
-	permissions permission.Service
-	skillsPaths []string
-}
-
 type ViewResponseMetadata struct {
 	FilePath string `json:"file_path"`
 	Content  string `json:"content"`
@@ -54,7 +47,13 @@ const (
 	MaxLineLength    = 2000
 )
 
-func NewViewTool(lspClients *csync.Map[string, *lsp.Client], permissions permission.Service, workingDir string, skillsPaths ...string) fantasy.AgentTool {
+func NewViewTool(
+	lspClients *csync.Map[string, *lsp.Client],
+	permissions permission.Service,
+	filetracker filetracker.Service,
+	workingDir string,
+	skillsPaths ...string,
+) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		ViewToolName,
 		string(viewDescription),
@@ -81,13 +80,13 @@ func NewViewTool(lspClients *csync.Map[string, *lsp.Client], permissions permiss
 			isOutsideWorkDir := err != nil || strings.HasPrefix(relPath, "..")
 			isSkillFile := isInSkillsPath(absFilePath, skillsPaths)
 
+			sessionID := GetSessionFromContext(ctx)
+			if sessionID == "" {
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for accessing files outside working directory")
+			}
+
 			// Request permission for files outside working directory, unless it's a skill file.
 			if isOutsideWorkDir && !isSkillFile {
-				sessionID := GetSessionFromContext(ctx)
-				if sessionID == "" {
-					return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for accessing files outside working directory")
-				}
-
 				granted, err := permissions.Request(ctx,
 					permission.CreatePermissionRequest{
 						SessionID:   sessionID,
@@ -197,7 +196,7 @@ func NewViewTool(lspClients *csync.Map[string, *lsp.Client], permissions permiss
 			}
 			output += "\n</file>\n"
 			output += getDiagnostics(filePath, lspClients)
-			filetracker.RecordRead(filePath)
+			filetracker.RecordRead(ctx, sessionID, filePath)
 			return fantasy.WithResponseMetadata(
 				fantasy.NewTextResponse(output),
 				ViewResponseMetadata{
