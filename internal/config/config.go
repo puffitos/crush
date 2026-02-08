@@ -443,6 +443,8 @@ type Config struct {
 
 	WakaTime *WakaTimeConfig `json:"wakatime,omitempty" jsonschema:"description=WakaTime time tracking configuration"`
 
+	WakaTime *WakaTimeConfig `json:"wakatime,omitempty" jsonschema:"description=WakaTime time tracking configuration"`
+
 	Agents map[string]Agent `json:"-"`
 
 	// Internal
