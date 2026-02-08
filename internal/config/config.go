@@ -240,6 +240,18 @@ type TUIOptions struct {
 	Transparent *bool       `json:"transparent,omitempty" jsonschema:"description=Enable transparent background for the TUI interface,default=false"`
 }
 
+// WakaTimeConfig holds configuration for WakaTime integration.
+type WakaTimeConfig struct {
+	// Enabled controls whether WakaTime tracking is enabled.
+	Enabled bool `json:"enabled,omitempty" jsonschema:"description=Enable WakaTime time tracking integration,default=false"`
+	// APIKey is the WakaTime API key. If empty, falls back to ~/.wakatime.cfg.
+	APIKey string `json:"api_key,omitempty" jsonschema:"description=WakaTime API key (optional - falls back to ~/.wakatime.cfg)"`
+	// Category is the activity category sent to WakaTime.
+	Category string `json:"category,omitempty" jsonschema:"description=Activity category for WakaTime,default=ai coding"`
+	// CLIPath is an optional path to the wakatime-cli binary.
+	CLIPath string `json:"cli_path,omitempty" jsonschema:"description=Path to wakatime-cli binary (optional - auto-detected if not set)"`
+}
+
 // Completions defines options for the completions UI.
 type Completions struct {
 	MaxDepth *int `json:"max_depth,omitempty" jsonschema:"description=Maximum depth for the ls tool,default=0,example=10"`
@@ -428,6 +440,8 @@ type Config struct {
 	Permissions *Permissions `json:"permissions,omitempty" jsonschema:"description=Permission settings for tool usage"`
 
 	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
+
+	WakaTime *WakaTimeConfig `json:"wakatime,omitempty" jsonschema:"description=WakaTime time tracking configuration"`
 
 	Agents map[string]Agent `json:"-"`
 

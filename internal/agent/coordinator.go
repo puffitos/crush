@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/integrations/wakatime"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
@@ -68,6 +69,8 @@ type coordinator struct {
 	filetracker filetracker.Service
 	lspManager  *lsp.Manager
 
+	wakatimeHook *wakatime.Hook
+
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent
 
@@ -93,6 +96,18 @@ func NewCoordinator(
 		filetracker: filetracker,
 		lspManager:  lspManager,
 		agents:      make(map[string]SessionAgent),
+	}
+
+	// Initialize WakaTime hook if enabled.
+	if cfg.WakaTime != nil && cfg.WakaTime.Enabled {
+		wakaService, err := wakatime.New(wakatime.Config{
+			Enabled:  cfg.WakaTime.Enabled,
+			APIKey:   cfg.WakaTime.APIKey,
+			Category: cfg.WakaTime.Category,
+		})
+		if err == nil && wakaService != nil {
+			c.wakatimeHook = wakatime.NewHook(wakaService, cfg.WorkingDir())
+		}
 	}
 
 	agentCfg, ok := cfg.Agents[config.AgentCoder]
@@ -479,6 +494,12 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 	slices.SortFunc(filteredTools, func(a, b fantasy.AgentTool) int {
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
+
+	// Wrap tools with WakaTime hook if enabled.
+	if c.wakatimeHook != nil {
+		filteredTools = c.wakatimeHook.WrapTools(filteredTools)
+	}
+
 	return filteredTools, nil
 }
 
