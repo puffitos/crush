@@ -3314,20 +3314,20 @@ func handleMCPResourcesEvent(name string) tea.Cmd {
 }
 
 func (m *UI) handleMCPOAuthRequired(ev mcp.Event) tea.Cmd {
-	msg := fmt.Sprintf("MCP %q requires OAuth — open this URL in your browser: %s", ev.Name, ev.AuthURL)
+	m.dialog.CloseDialog(dialog.OAuthNoticeID)
+	var sshHint string
 	if ev.BrowserFailed && isSSHSession() {
 		port := extractCallbackPort(ev.AuthURL)
 		if port != "" {
-			msg = fmt.Sprintf("MCP %q requires OAuth over SSH. First run: ssh -L %s:localhost:%s <host> — then open: %s", ev.Name, port, port, ev.AuthURL)
-		} else {
-			msg = fmt.Sprintf("MCP %q requires OAuth (browser unavailable over SSH). Open this URL on your local machine: %s", ev.Name, ev.AuthURL)
+			sshHint = fmt.Sprintf(
+				"SSH session detected. Ensure port forwarding:\n  ssh -L %s:localhost:%s <host>",
+				port, port,
+			)
 		}
 	}
-	return util.CmdHandler(util.InfoMsg{
-		Type: util.InfoTypeWarn,
-		Msg:  msg,
-		TTL:  5 * time.Minute,
-	})
+	d := dialog.NewOAuthNotice(m.com, ev.Name, ev.AuthURL, sshHint)
+	m.dialog.OpenDialog(d)
+	return nil
 }
 
 func extractCallbackPort(authURL string) string {
