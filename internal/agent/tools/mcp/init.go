@@ -97,15 +97,18 @@ const (
 	EventToolsListChanged
 	EventPromptsListChanged
 	EventResourcesListChanged
+	EventOAuthRequired
 )
 
 // Event represents an event in the MCP system
 type Event struct {
-	Type   EventType
-	Name   string
-	State  State
-	Error  error
-	Counts Counts
+	Type          EventType
+	Name          string
+	State         State
+	Error         error
+	Counts        Counts
+	AuthURL       string
+	BrowserFailed bool
 }
 
 // Counts number of available tools, prompts, etc.
@@ -482,6 +485,15 @@ func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, to
 			opts := mcpoauth.DefaultAuthFlowOptions()
 			opts.OnAuthURL = func(url string) {
 				slog.Info("Please authorize in your browser", "mcp", mcpName, "url", url)
+			}
+			opts.OnBrowserFailed = func(authURL string, err error) {
+				slog.Warn("Browser failed to open for OAuth", "mcp", mcpName, "error", err)
+				broker.Publish(pubsub.UpdatedEvent, Event{
+					Type:          EventOAuthRequired,
+					Name:          mcpName,
+					AuthURL:       authURL,
+					BrowserFailed: true,
+				})
 			}
 
 			return mcpoauth.StartAuthFlow(ctx, cfg, opts)
