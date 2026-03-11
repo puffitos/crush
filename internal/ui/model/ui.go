@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -537,6 +538,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, handleMCPToolsEvent(m.com.Config(), msg.Payload.Name)
 		case mcp.EventResourcesListChanged:
 			return m, handleMCPResourcesEvent(msg.Payload.Name)
+		case mcp.EventOAuthRequired:
+			return m, m.handleMCPOAuthRequired(msg.Payload)
 		}
 	case pubsub.Event[permission.PermissionRequest]:
 		if cmd := m.openPermissionsDialog(msg.Payload); cmd != nil {
@@ -3308,6 +3311,45 @@ func handleMCPResourcesEvent(name string) tea.Cmd {
 		mcp.RefreshResources(context.Background(), name)
 		return nil
 	}
+}
+
+func (m *UI) handleMCPOAuthRequired(ev mcp.Event) tea.Cmd {
+	m.dialog.CloseDialog(dialog.OAuthNoticeID)
+	var sshHint string
+	if ev.BrowserFailed && isSSHSession() {
+		port := extractCallbackPort(ev.AuthURL)
+		if port != "" {
+			sshHint = fmt.Sprintf(
+				"SSH session detected. Ensure port forwarding:\n  ssh -L %s:localhost:%s <host>",
+				port, port,
+			)
+		}
+	}
+	d := dialog.NewOAuthNotice(m.com, ev.Name, ev.AuthURL, sshHint)
+	m.dialog.OpenDialog(d)
+	return nil
+}
+
+func extractCallbackPort(authURL string) string {
+	u, err := url.Parse(authURL)
+	if err != nil {
+		return ""
+	}
+	redirectURI := u.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		return ""
+	}
+	ru, err := url.Parse(redirectURI)
+	if err != nil {
+		return ""
+	}
+	return ru.Port()
+}
+
+func isSSHSession() bool {
+	_, hasTTY := os.LookupEnv("SSH_TTY")
+	_, hasClient := os.LookupEnv("SSH_CLIENT")
+	return hasTTY || hasClient
 }
 
 func (m *UI) copyChatHighlight() tea.Cmd {

@@ -26,6 +26,8 @@ type AuthFlowOptions struct {
 	OpenBrowser bool
 	// OnAuthURL is called with the authorization URL (for displaying to user)
 	OnAuthURL func(url string)
+	// OnBrowserFailed is called when the browser fails to open automatically.
+	OnBrowserFailed func(authURL string, err error)
 }
 
 // DefaultAuthFlowOptions returns the default options for the auth flow.
@@ -84,7 +86,9 @@ func StartAuthFlow(ctx context.Context, cfg Config, opts AuthFlowOptions) (*oaut
 	if opts.OpenBrowser {
 		if err = openBrowser(authURL); err != nil {
 			slog.Warn("Failed to open browser automatically", "error", err)
-			// Continue anyway - user can copy the URL
+			if opts.OnBrowserFailed != nil {
+				opts.OnBrowserFailed(authURL, err)
+			}
 		}
 	}
 
