@@ -44,6 +44,18 @@ import (
 	"github.com/qjebbs/go-jsons"
 )
 
+// Coordinator errors.
+var (
+	errCoderAgentNotConfigured         = errors.New("coder agent not configured")
+	errModelProviderNotConfigured      = errors.New("model provider not configured")
+	errLargeModelNotSelected           = errors.New("large model not selected")
+	errSmallModelNotSelected           = errors.New("small model not selected")
+	errLargeModelProviderNotConfigured = errors.New("large model provider not configured")
+	errSmallModelProviderNotConfigured = errors.New("small model provider not configured")
+	errLargeModelNotFound              = errors.New("large model not found in provider config")
+	errSmallModelNotFound              = errors.New("small model not found in provider config")
+)
+
 type Coordinator interface {
 	// INFO: (kujtim) this is not used yet we will use this when we have multiple agents
 	// SetMainAgent(string)
@@ -112,7 +124,7 @@ func NewCoordinator(
 
 	agentCfg, ok := cfg.Agents[config.AgentCoder]
 	if !ok {
-		return nil, errors.New("coder agent not configured")
+		return nil, errCoderAgentNotConfigured
 	}
 
 	// TODO: make this dynamic when we support multiple agents
@@ -160,7 +172,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 
 	providerCfg, ok := c.cfg.Providers.Get(model.ModelCfg.Provider)
 	if !ok {
-		return nil, errors.New("model provider not configured")
+		return nil, errModelProviderNotConfigured
 	}
 
 	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg)
@@ -518,16 +530,16 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Model, Model, error) {
 	largeModelCfg, ok := c.cfg.Models[config.SelectedModelTypeLarge]
 	if !ok {
-		return Model{}, Model{}, errors.New("large model not selected")
+		return Model{}, Model{}, errLargeModelNotSelected
 	}
 	smallModelCfg, ok := c.cfg.Models[config.SelectedModelTypeSmall]
 	if !ok {
-		return Model{}, Model{}, errors.New("small model not selected")
+		return Model{}, Model{}, errSmallModelNotSelected
 	}
 
 	largeProviderCfg, ok := c.cfg.Providers.Get(largeModelCfg.Provider)
 	if !ok {
-		return Model{}, Model{}, errors.New("large model provider not configured")
+		return Model{}, Model{}, errLargeModelProviderNotConfigured
 	}
 
 	largeProvider, err := c.buildProvider(largeProviderCfg, largeModelCfg, isSubAgent)
@@ -537,7 +549,7 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 
 	smallProviderCfg, ok := c.cfg.Providers.Get(smallModelCfg.Provider)
 	if !ok {
-		return Model{}, Model{}, errors.New("small model provider not configured")
+		return Model{}, Model{}, errSmallModelProviderNotConfigured
 	}
 
 	smallProvider, err := c.buildProvider(smallProviderCfg, smallModelCfg, true)
@@ -560,11 +572,11 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 	}
 
 	if largeCatwalkModel == nil {
-		return Model{}, Model{}, errors.New("large model not found in provider config")
+		return Model{}, Model{}, errLargeModelNotFound
 	}
 
 	if smallCatwalkModel == nil {
-		return Model{}, Model{}, errors.New("small model not found in provider config")
+		return Model{}, Model{}, errSmallModelNotFound
 	}
 
 	largeModelID := largeModelCfg.Model
@@ -793,19 +805,8 @@ func (c *coordinator) isAnthropicThinking(model config.SelectedModel) bool {
 	if model.Think {
 		return true
 	}
-
-	if model.ProviderOptions == nil {
-		return false
-	}
-
 	opts, err := anthropic.ParseOptions(model.ProviderOptions)
-	if err != nil {
-		return false
-	}
-	if opts.Thinking != nil {
-		return true
-	}
-	return false
+	return err == nil && opts.Thinking != nil
 }
 
 func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model config.SelectedModel, isSubAgent bool) (fantasy.Provider, error) {
@@ -903,7 +904,7 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 
 	agentCfg, ok := c.cfg.Agents[config.AgentCoder]
 	if !ok {
-		return errors.New("coder agent not configured")
+		return errCoderAgentNotConfigured
 	}
 
 	tools, err := c.buildTools(ctx, agentCfg)
@@ -925,7 +926,7 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []string {
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	providerCfg, ok := c.cfg.Providers.Get(c.currentAgent.Model().ModelCfg.Provider)
 	if !ok {
-		return errors.New("model provider not configured")
+		return errModelProviderNotConfigured
 	}
 	return c.currentAgent.Summarize(ctx, sessionID, getProviderOptions(c.currentAgent.Model(), providerCfg))
 }
@@ -1000,7 +1001,7 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 
 	providerCfg, ok := c.cfg.Providers.Get(model.ModelCfg.Provider)
 	if !ok {
-		return fantasy.ToolResponse{}, errors.New("model provider not configured")
+		return fantasy.ToolResponse{}, errModelProviderNotConfigured
 	}
 
 	// Run the agent
