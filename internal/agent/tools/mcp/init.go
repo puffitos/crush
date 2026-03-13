@@ -170,14 +170,14 @@ func Close(ctx context.Context) error {
 }
 
 // Initialize initializes MCP clients based on the provided configuration.
-func Initialize(ctx context.Context, permissions permission.Service, cfg *config.Config) {
+func Initialize(ctx context.Context, permissions permission.Service, cfg *config.ConfigStore) {
 	slog.Info("Initializing MCP clients")
 	// Initialize the token store for OAuth token persistence (uses global data directory)
 	tokenStore = NewTokenStore()
 
 	var wg sync.WaitGroup
 	// Initialize states for all configured MCPs
-	for name, m := range cfg.MCP {
+	for name, m := range cfg.Config().MCP {
 		if m.Disabled {
 			updateState(name, StateDisabled, nil, nil, Counts{})
 			slog.Debug("Skipping disabled MCP", "name", name)
@@ -263,13 +263,13 @@ func WaitForInit(ctx context.Context) error {
 	}
 }
 
-func getOrRenewClient(ctx context.Context, cfg *config.Config, name string) (*ClientSession, error) {
+func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string) (*ClientSession, error) {
 	sess, ok := sessions.Get(name)
 	if !ok {
 		return nil, fmt.Errorf("mcp '%s' not available", name)
 	}
 
-	m := cfg.MCP[name]
+	m := cfg.Config().MCP[name]
 	state, _ := states.Get(name)
 
 	timeout := mcpTimeout(m)
