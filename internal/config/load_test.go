@@ -254,6 +254,44 @@ func TestConfig_configureProvidersBedrockWithoutUnsupportedModel(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestConfig_configureProvidersBedrockWithRegionPrefix(t *testing.T) {
+	knownProviders := []catwalk.Provider{
+		{
+			ID:          catwalk.InferenceProviderBedrock,
+			APIKey:      "",
+			APIEndpoint: "",
+			Models: []catwalk.Model{{
+				ID: "anthropic.claude-sonnet-4-20250514-v1:0",
+			}},
+			DefaultLargeModelID: "anthropic.claude-sonnet-4-20250514-v1:0",
+			DefaultSmallModelID: "anthropic.claude-sonnet-4-20250514-v1:0",
+		},
+	}
+
+	cfg := &Config{}
+	cfg.setDefaults("/tmp", "")
+	env := env.NewFromMap(map[string]string{
+		"AWS_ACCESS_KEY_ID":     "test-key-id",
+		"AWS_SECRET_ACCESS_KEY": "test-secret-key",
+		"AWS_REGION":            "eu-central-1",
+	})
+	resolver := NewEnvironmentVariableResolver(env)
+	err := cfg.configureProviders(testStore(cfg), env, resolver, knownProviders)
+	require.NoError(t, err)
+
+	bedrockProvider, ok := cfg.Providers.Get("bedrock")
+	require.True(t, ok)
+	require.Len(t, bedrockProvider.Models, 1)
+	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", bedrockProvider.Models[0].ID)
+
+	large, small, err := cfg.defaultModelSelection(knownProviders)
+	require.NoError(t, err)
+	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", large.Model)
+	require.Equal(t, "bedrock", large.Provider)
+	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", small.Model)
+	require.Equal(t, "bedrock", small.Provider)
+}
+
 func TestConfig_configureProvidersVertexAIWithCredentials(t *testing.T) {
 	knownProviders := []catwalk.Provider{
 		{
