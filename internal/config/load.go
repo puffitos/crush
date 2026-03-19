@@ -284,10 +284,8 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 			if prepared.ExtraParams["region"] == "" {
 				prepared.ExtraParams["region"] = env.Get("AWS_DEFAULT_REGION")
 			}
-			if prefix := bedrockRegionPrefix(prepared.ExtraParams["region"]); prefix != "" {
-				p.PrefixModelIDs(prefix)
-				prepared.Models = p.Models
-			}
+			p.ApplyBedrockRegion(prepared.ExtraParams["region"])
+			prepared.Models = p.Models
 			for _, model := range prepared.Models {
 				if !strings.HasPrefix(model.ID, "anthropic.") &&
 					!strings.Contains(model.ID, ".anthropic.") {
@@ -822,19 +820,3 @@ func GlobalSkillsDirs() []string {
 }
 
 func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
-
-// bedrockRegionPrefix returns the cross-region inference profile prefix for a
-// given AWS region (e.g. "eu-central-1" → "eu."), or an empty string when the
-// region is unknown or already covered by a global profile.
-func bedrockRegionPrefix(region string) string {
-	switch {
-	case strings.HasPrefix(region, "us-"):
-		return "us."
-	case strings.HasPrefix(region, "eu-"):
-		return "eu."
-	case strings.HasPrefix(region, "ap-"):
-		return "ap."
-	default:
-		return ""
-	}
-}
