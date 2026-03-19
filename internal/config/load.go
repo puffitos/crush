@@ -163,7 +163,8 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 		knownProviders = nil
 	}
 
-	for _, p := range knownProviders {
+	for idx := range knownProviders {
+		p := &knownProviders[idx]
 		knownProviderNames[string(p.ID)] = true
 		config, configExists := c.Providers.Get(string(p.ID))
 		// if the user configured a known provider we need to allow it to override a couple of parameters
@@ -283,8 +284,13 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 			if prepared.ExtraParams["region"] == "" {
 				prepared.ExtraParams["region"] = env.Get("AWS_DEFAULT_REGION")
 			}
-			for _, model := range p.Models {
-				if !strings.HasPrefix(model.ID, "anthropic.") {
+			if prefix := bedrockRegionPrefix(prepared.ExtraParams["region"]); prefix != "" {
+				p.PrefixModelIDs(prefix)
+				prepared.Models = p.Models
+			}
+			for _, model := range prepared.Models {
+				if !strings.HasPrefix(model.ID, "anthropic.") &&
+					!strings.Contains(model.ID, ".anthropic.") {
 					return fmt.Errorf("bedrock provider only supports anthropic models for now, found: %s", model.ID)
 				}
 			}
@@ -816,3 +822,19 @@ func GlobalSkillsDirs() []string {
 }
 
 func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
+
+// bedrockRegionPrefix returns the cross-region inference profile prefix for a
+// given AWS region (e.g. "eu-central-1" → "eu."), or an empty string when the
+// region is unknown or already covered by a global profile.
+func bedrockRegionPrefix(region string) string {
+	switch {
+	case strings.HasPrefix(region, "us-"):
+		return "us."
+	case strings.HasPrefix(region, "eu-"):
+		return "eu."
+	case strings.HasPrefix(region, "ap-"):
+		return "ap."
+	default:
+		return ""
+	}
+}

@@ -37,11 +37,15 @@ detection, and nil-safe service design.
 
 ## Bedrock Region Prefix Fix
 
-`GetModel` now falls back to a suffix match so that bedrock model IDs
-prefixed with a cross-region inference profile (`eu.`, `us.`, `ap.`)
-are still resolved when looked up by their original unprefixed ID
-from catwalk.
+Uses catwalk's `PrefixModelIDs` method (added in our catwalk fork
+`puffitos/catwalk`) to prepend the cross-region inference profile
+prefix (`eu.`, `us.`, `ap.`) to all model IDs **and** default model
+references (`DefaultLargeModelID`, `DefaultSmallModelID`) in one
+call. This keeps lookups consistent for both large and small models.
+
+Requires `go.mod` replace directive pointing to `puffitos/catwalk`.
 
 | Commit | Description |
 |--------|-------------|
 | `f7980211` | fix(config): resolve bedrock model lookup when region prefix is set |
+| `d90a5e95` | refactor(config): use catwalk PrefixModelIDs for bedrock region prefix |

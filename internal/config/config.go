@@ -464,15 +464,6 @@ func (c *Config) GetModel(provider, model string) *catwalk.Model {
 				return &m
 			}
 		}
-		// Bedrock model IDs may have a region prefix (e.g. "us.", "eu.",
-		// "ap.") prepended during provider configuration. Fall back to a
-		// suffix match so callers using the original unprefixed ID still
-		// resolve correctly.
-		for _, m := range providerConfig.Models {
-			if strings.HasSuffix(m.ID, "."+model) {
-				return &m
-			}
-		}
 	}
 	return nil
 }

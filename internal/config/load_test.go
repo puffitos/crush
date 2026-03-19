@@ -284,6 +284,9 @@ func TestConfig_configureProvidersBedrockWithRegionPrefix(t *testing.T) {
 	require.Len(t, bedrockProvider.Models, 1)
 	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", bedrockProvider.Models[0].ID)
 
+	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", knownProviders[0].DefaultLargeModelID)
+	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", knownProviders[0].DefaultSmallModelID)
+
 	large, small, err := cfg.defaultModelSelection(knownProviders)
 	require.NoError(t, err)
 	require.Equal(t, "eu.anthropic.claude-sonnet-4-20250514-v1:0", large.Model)
