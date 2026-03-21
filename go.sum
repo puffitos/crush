@@ -317,6 +317,8 @@ github.com/posthog/posthog-go v1.11.1 h1:P0MHlerMW9rNpjW+1szNsJ5HbdYJUv/9lF2DWZC
 github.com/posthog/posthog-go v1.11.1/go.mod h1:wB3/9Q7d9gGb1P/yf/Wri9VBlbP8oA8z++prRzL5OcY=
 github.com/pressly/goose/v3 v3.27.0 h1:/D30gVTuQhu0WsNZYbJi4DMOsx1lNq+6SkLe+Wp59BM=
 github.com/pressly/goose/v3 v3.27.0/go.mod h1:3ZBeCXqzkgIRvrEMDkYh1guvtoJTU5oMMuDdkutoM78=
+github.com/puffitos/catwalk v0.30.7-awsfix h1:mHS3/Jy5KYgE38hVYZzYLzAsEArLh95UyceYgJd3JUk=
+github.com/puffitos/catwalk v0.30.7-awsfix/go.mod h1:+fqw/6YGNtvapvPy9vhwA/fAMxVjD2K8hVIKYov8Vhg=
 github.com/qjebbs/go-jsons v1.0.0-alpha.4 h1:Qsb4ohRUHQODIUAsJKdKJ/SIDbsO7oGOzsfy+h1yQZs=
 github.com/qjebbs/go-jsons v1.0.0-alpha.4/go.mod h1:wNJrtinHyC3YSf6giEh4FJN8+yZV7nXBjvmfjhBIcw4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
