@@ -163,8 +163,8 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 		knownProviders = nil
 	}
 
-	for idx := range knownProviders {
-		p := &knownProviders[idx]
+	for _, p := range knownProviders {
+		p := p
 		knownProviderNames[string(p.ID)] = true
 		config, configExists := c.Providers.Get(string(p.ID))
 		// if the user configured a known provider we need to allow it to override a couple of parameters
@@ -283,14 +283,6 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 			prepared.ExtraParams["region"] = env.Get("AWS_REGION")
 			if prepared.ExtraParams["region"] == "" {
 				prepared.ExtraParams["region"] = env.Get("AWS_DEFAULT_REGION")
-			}
-			p.ApplyBedrockRegion(prepared.ExtraParams["region"])
-			prepared.Models = p.Models
-			for _, model := range prepared.Models {
-				if !strings.HasPrefix(model.ID, "anthropic.") &&
-					!strings.Contains(model.ID, ".anthropic.") {
-					return fmt.Errorf("bedrock provider only supports anthropic models for now, found: %s", model.ID)
-				}
 			}
 		default:
 			// if the provider api or endpoint are missing we skip them
