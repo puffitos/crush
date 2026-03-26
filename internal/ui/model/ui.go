@@ -67,8 +67,11 @@ const (
 	compactModeHeightBreakpoint = 30
 )
 
-// If pasted text has more than 2 newlines, treat it as a file attachment.
+// If pasted text has more than 10 newlines, treat it as a file attachment.
 const pasteLinesThreshold = 10
+
+// If pasted text has more than 1000 columns, treat it as a file attachment.
+const pasteColsThreshold = 1000
 
 // Session details panel max height.
 const sessionDetailsMaxHeight = 20
@@ -2311,11 +2314,6 @@ func (m *UI) FullHelp() [][]key.Binding {
 					},
 				)
 			}
-			binds = append(binds,
-				[]key.Binding{
-					help,
-				},
-			)
 		}
 	}
 
@@ -2954,6 +2952,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openReasoningDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.FilePickerID:
+		if cmd := m.openFilesDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.QuitID:
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -3163,7 +3165,7 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 		return nil
 	}
 
-	if strings.Count(msg.Content, "\n") > pasteLinesThreshold {
+	if hasPasteExceededThreshold(msg) {
 		return func() tea.Msg {
 			content := []byte(msg.Content)
 			if int64(len(content)) > common.MaxAttachmentSize {
@@ -3219,6 +3221,22 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 		cmds = append(cmds, m.handleFilePathPaste(path))
 	}
 	return tea.Batch(cmds...)
+}
+
+func hasPasteExceededThreshold(msg tea.PasteMsg) bool {
+	var (
+		lineCount = 0
+		colCount  = 0
+	)
+	for line := range strings.SplitSeq(msg.Content, "\n") {
+		lineCount++
+		colCount = max(colCount, len(line))
+
+		if lineCount > pasteLinesThreshold || colCount > pasteColsThreshold {
+			return true
+		}
+	}
+	return false
 }
 
 // handleFilePathPaste handles a pasted file path.
