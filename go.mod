@@ -204,4 +204,4 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace charm.land/catwalk => github.com/puffitos/catwalk v0.30.7-awsfix
+replace charm.land/catwalk => github.com/puffitos/catwalk v0.34.1-awsfix
