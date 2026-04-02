@@ -742,10 +742,7 @@ func GlobalConfig() string {
 	if crushGlobal := os.Getenv("CRUSH_GLOBAL_CONFIG"); crushGlobal != "" {
 		return filepath.Join(crushGlobal, fmt.Sprintf("%s.json", appName))
 	}
-	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
-		return filepath.Join(xdgConfigHome, appName, fmt.Sprintf("%s.json", appName))
-	}
-	return filepath.Join(home.Dir(), ".config", appName, fmt.Sprintf("%s.json", appName))
+	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
 }
 
 // GlobalDataDir returns the global data directory for the application.
@@ -795,14 +792,9 @@ func GlobalSkillsDirs() []string {
 		return []string{crushSkills}
 	}
 
-	configHome := cmp.Or(
-		os.Getenv("XDG_CONFIG_HOME"),
-		filepath.Join(home.Dir(), ".config"),
-	)
-
 	paths := []string{
-		filepath.Join(configHome, appName, "skills"),
-		filepath.Join(configHome, "agents", "skills"),
+		filepath.Join(home.Config(), appName, "skills"),
+		filepath.Join(home.Config(), "agents", "skills"),
 	}
 
 	// On Windows, also load from app data on top of `$HOME/.config/crush`.
