@@ -325,8 +325,8 @@ github.com/posthog/posthog-go v1.11.2 h1:ApKTtOhIeWhUBc4ByO+mlbg2o0iZaEGJnJHX2QD
 github.com/posthog/posthog-go v1.11.2/go.mod h1:xsVOW9YImilUcazwPNEq4PJDqEZf2KeCS758zXjwkPg=
 github.com/pressly/goose/v3 v3.27.0 h1:/D30gVTuQhu0WsNZYbJi4DMOsx1lNq+6SkLe+Wp59BM=
 github.com/pressly/goose/v3 v3.27.0/go.mod h1:3ZBeCXqzkgIRvrEMDkYh1guvtoJTU5oMMuDdkutoM78=
-github.com/puffitos/catwalk v0.34.1-awsfix h1:TtWq8mNVdLc6cxNu8Df6wuglS9n1ptLVnL4lae2T4FY=
-github.com/puffitos/catwalk v0.34.1-awsfix/go.mod h1:+fqw/6YGNtvapvPy9vhwA/fAMxVjD2K8hVIKYov8Vhg=
+github.com/puffitos/catwalk v0.34.3-awsfix h1:s5f1MotB+vaWNEXVCvt/SM7ViXOU0xOP6set7i9HrqI=
+github.com/puffitos/catwalk v0.34.3-awsfix/go.mod h1:+fqw/6YGNtvapvPy9vhwA/fAMxVjD2K8hVIKYov8Vhg=
 github.com/qjebbs/go-jsons v1.0.0-alpha.4 h1:Qsb4ohRUHQODIUAsJKdKJ/SIDbsO7oGOzsfy+h1yQZs=
 github.com/qjebbs/go-jsons v1.0.0-alpha.4/go.mod h1:wNJrtinHyC3YSf6giEh4FJN8+yZV7nXBjvmfjhBIcw4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
