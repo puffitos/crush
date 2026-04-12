@@ -529,6 +529,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			currentAssistant.AddFinish(message.FinishReasonCanceled, "User canceled request", "")
 		} else if isPermissionErr {
 			currentAssistant.AddFinish(message.FinishReasonPermissionDenied, "User denied permission", "")
+		} else if errors.Is(err, hyper.ErrUnauthorized) {
+			currentAssistant.AddFinish(message.FinishReasonError, "Unauthorized", `Please re-authenticate with Hyper. You can also run "crush auth" to re-authenticate.`)
+			if a.notify != nil {
+				a.notify.Publish(pubsub.CreatedEvent, notify.Notification{
+					SessionID:    call.SessionID,
+					SessionTitle: currentSession.Title,
+					Type:         notify.TypeReAuthenticate,
+					ProviderID:   largeModel.ModelCfg.Provider,
+				})
+			}
 		} else if errors.Is(err, hyper.ErrNoCredits) {
 			url := hyper.BaseURL()
 			link := linkStyle.Hyperlink(url, "id=hyper").Render(url)
@@ -1081,13 +1091,22 @@ func (a *sessionAgent) convertToToolResult(result fantasy.ToolResultContent) mes
 		}
 	case fantasy.ToolResultContentTypeMedia:
 		if r, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentMedia](result.Result); ok {
-			content := r.Text
-			if content == "" {
-				content = fmt.Sprintf("Loaded %s content", r.MediaType)
+			if !stringext.IsValidBase64(r.Data) {
+				slog.Warn("Tool returned media with invalid base64 data, discarding image",
+					"tool", result.ToolName,
+					"tool_call_id", result.ToolCallID,
+				)
+				baseResult.Content = "Tool returned image data with invalid encoding"
+				baseResult.IsError = true
+			} else {
+				content := r.Text
+				if content == "" {
+					content = fmt.Sprintf("Loaded %s content", r.MediaType)
+				}
+				baseResult.Content = content
+				baseResult.Data = r.Data
+				baseResult.MIMEType = r.MediaType
 			}
-			baseResult.Content = content
-			baseResult.Data = r.Data
-			baseResult.MIMEType = r.MediaType
 		}
 	}
 
