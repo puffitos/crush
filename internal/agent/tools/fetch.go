@@ -18,7 +18,7 @@ import (
 
 const (
 	FetchToolName = "fetch"
-	MaxFetchSize  = 1 * 1024 * 1024 // 1MB
+	MaxFetchSize  = 100 * 1024 // 100KB
 )
 
 //go:embed fetch.md
@@ -160,7 +160,7 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 				}
 			}
 			// truncate content if it exceeds max read size
-			if int64(len(content)) > MaxFetchSize {
+			if int64(len(content)) >= MaxFetchSize {
 				content = content[:MaxFetchSize]
 				content += fmt.Sprintf("\n\n[Content truncated to %d bytes]", MaxFetchSize)
 			}

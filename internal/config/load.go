@@ -26,7 +26,7 @@ import (
 	"github.com/qjebbs/go-jsons"
 )
 
-const defaultCatwalkURL = "https://catwalk.charm.sh"
+const defaultCatwalkURL = "https://catwalk.charm.land"
 
 // Load loads the configuration from the default paths and returns a
 // ConfigStore that owns both the pure-data Config and all runtime state.
@@ -292,7 +292,8 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 				prepared.ExtraParams["region"] = env.Get("AWS_DEFAULT_REGION")
 			}
 			for _, model := range p.Models {
-				if !strings.HasPrefix(model.ID, "anthropic.") {
+				if !strings.HasPrefix(model.ID, "anthropic.") &&
+					!strings.Contains(model.ID, ".anthropic.") {
 					return fmt.Errorf("bedrock provider only supports anthropic models for now, found: %s", model.ID)
 				}
 			}
