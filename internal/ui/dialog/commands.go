@@ -252,9 +252,9 @@ func commandsRadioView(sty *styles.Styles, selected CommandType, hasUserCmds boo
 
 	selectedFn := func(t CommandType) string {
 		if t == selected {
-			return sty.RadioOn.Padding(0, 1).Render() + sty.HalfMuted.Render(t.String())
+			return sty.Radio.On.Padding(0, 1).Render() + sty.Radio.Label.Render(t.String())
 		}
-		return sty.RadioOff.Padding(0, 1).Render() + sty.HalfMuted.Render(t.String())
+		return sty.Radio.Off.Padding(0, 1).Render() + sty.Radio.Label.Render(t.String())
 	}
 
 	parts := []string{
@@ -524,7 +524,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_transparent", transparentLabel, "", ActionToggleTransparentBackground{}))
 
 	commands = append(commands,
-		NewCommandItem(c.com.Styles, "quit", "Quit", "ctrl+c", tea.QuitMsg{}),
+		NewCommandItem(c.com.Styles, "quit", "Quit", "ctrl+c", tea.QuitMsg{}).WithAliases("exit"),
 	)
 
 	return commands

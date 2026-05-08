@@ -7,7 +7,6 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -86,14 +85,14 @@ func (d *OAuthNotice) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		t,
 		titleStyle.Render("Authorization Required"),
 		d.width-headerOffset,
-		t.Primary,
-		t.Secondary,
+		t.Dialog.TitleGradFromColor,
+		t.Dialog.TitleGradToColor,
 	)
 
-	whiteStyle := lipgloss.NewStyle().Foreground(t.White)
-	mutedStyle := lipgloss.NewStyle().Foreground(t.FgMuted)
-	linkStyle := lipgloss.NewStyle().Foreground(t.GreenDark).Underline(true)
-	warnStyle := lipgloss.NewStyle().Foreground(t.Yellow)
+	whiteStyle := t.Dialog.PrimaryText
+	mutedStyle := t.Dialog.SecondaryText
+	linkStyle := t.Initialize.Accent.Underline(true)
+	warnStyle := t.LSP.WarningDiagnostic
 
 	innerWidth := d.width - dialogStyle.GetHorizontalFrameSize() - 2
 

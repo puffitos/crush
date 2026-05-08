@@ -73,9 +73,6 @@ func UpdateProviders(pathOrURL string) error {
 
 // UpdateHyper updates the Hyper provider information from a specified URL.
 func UpdateHyper(pathOrURL string) error {
-	if !hyper.Enabled() {
-		return fmt.Errorf("hyper not enabled")
-	}
 	var provider catwalk.Provider
 	pathOrURL = cmp.Or(pathOrURL, hyper.BaseURL())
 
@@ -151,7 +148,7 @@ func Providers(cfg *Config) ([]catwalk.Provider, error) {
 		})
 
 		wg.Go(func() {
-			if customProvidersOnly || !hyper.Enabled() {
+			if customProvidersOnly {
 				return
 			}
 			path := cachePathFor("hyper")

@@ -53,7 +53,7 @@ type ViewResponseMetadata struct {
 
 const (
 	ViewToolName     = "view"
-	MaxViewSize      = 100 * 1024 // 100KB
+	MaxViewSize      = 200 * 1024 // 200KB
 	DefaultReadLimit = 2000
 	MaxLineLength    = 2000
 )
@@ -120,7 +120,7 @@ func NewViewTool(
 					return fantasy.ToolResponse{}, permReqErr
 				}
 				if !granted {
-					return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+					return NewPermissionDeniedResponse(), nil
 				}
 			}
 

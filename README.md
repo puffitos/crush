@@ -169,7 +169,7 @@ go install github.com/charmbracelet/crush@latest
 > [!WARNING]
 > Productivity may increase when using Crush and you may find yourself nerd
 > sniped when first using the application. If the symptoms persist, join the
-> [Discord][discord] and nerd snipe the rest of us.
+> [Slack][slack] or [Discord][discord] and nerd snipe the rest of us.
 
 ## Getting Started
 
@@ -181,6 +181,7 @@ That said, you can also set environment variables for preferred providers.
 
 | Environment Variable        | Provider                                           |
 | --------------------------- | -------------------------------------------------- |
+| `HYPER_API_KEY`             | Charm Hyper                                        |
 | `ANTHROPIC_API_KEY`         | Anthropic                                          |
 | `OPENAI_API_KEY`            | OpenAI                                             |
 | `VERCEL_API_KEY`            | Vercel AI Gateway                                  |
@@ -334,6 +335,11 @@ using `$(echo $VAR)` syntax.
   }
 }
 ```
+
+### Hooks
+
+Crush has preliminary support for hooks. For details, see
+[the hook guide](./docs/hooks/).
 
 ### Ignoring Files
 
@@ -802,8 +808,8 @@ Or by setting the following in your config:
 }
 ```
 
-Crush also respects the `DO_NOT_TRACK` convention which can be enabled via
-`export DO_NOT_TRACK=1`.
+Crush also respects the [`DO_NOT_TRACK`](https://donottrack.sh/) convention
+which can be enabled via `export DO_NOT_TRACK=1`.
 
 ## Q&A
 
@@ -827,11 +833,12 @@ See the [contributing guide](https://github.com/charmbracelet/crush?tab=contribu
 We’d love to hear your thoughts on this project. Need help? We gotchu. You can find us on:
 
 - [Twitter](https://twitter.com/charmcli)
-- [Slack](https://charm.land/slack)
+- [Slack][slack]
 - [Discord][discord]
 - [The Fediverse](https://mastodon.social/@charmcli)
 - [Bluesky](https://bsky.app/profile/charm.land)
 
+[slack]: https://charm.land/slack
 [discord]: https://charm.land/discord
 
 ## License
@@ -842,7 +849,7 @@ We’d love to hear your thoughts on this project. Need help? We gotchu. You can
 
 Part of [Charm](https://charm.land).
 
-<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-next.jpg" /></a>
+<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-softy.jpg" /></a>
 
 <!--prettier-ignore-->
 Charm热爱开源 • Charm loves open source

@@ -39,7 +39,6 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/stringext"
@@ -104,6 +103,7 @@ type Model struct {
 	Model      fantasy.LanguageModel
 	CatwalkCfg catwalk.Model
 	ModelCfg   config.SelectedModel
+	FlatRate   bool
 }
 
 type sessionAgent struct {
@@ -246,7 +246,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	defer cancel()
 	defer a.activeRequests.Del(call.SessionID)
 
-	history, files := a.preparePrompt(msgs, call.Attachments...)
+	history, files := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages, call.Attachments...)
 
 	startTime := time.Now()
 	a.eventPromptSent(call.SessionID)
@@ -378,7 +378,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
-			// TODO: implement
+			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
 			toolCall := message.ToolCall{
@@ -414,6 +414,18 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				finishReason = message.FinishReasonEndTurn
 			case fantasy.FinishReasonToolCalls:
 				finishReason = message.FinishReasonToolUse
+			}
+			// If a tool result halted the turn (e.g. a hook halt or a
+			// permission denial), the step ends on FinishReasonToolCalls but
+			// the model will not be called again. Treat it as the end of the
+			// turn so the UI can render the assistant footer.
+			if finishReason == message.FinishReasonToolUse {
+				for _, tr := range stepResult.Content.ToolResults() {
+					if tr.StopTurn {
+						finishReason = message.FinishReasonEndTurn
+						break
+					}
+				}
 			}
 			currentAssistant.AddFinish(finishReason, "", "")
 			sessionLock.Lock()
@@ -464,7 +476,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	if err != nil {
 		isHyper := largeModel.ModelCfg.Provider == hyper.Name
 		isCancelErr := errors.Is(err, context.Canceled)
-		isPermissionErr := errors.Is(err, permission.ErrorPermissionDenied)
 		if currentAssistant == nil {
 			return result, err
 		}
@@ -507,8 +518,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			content := "There was an error while executing the tool"
 			if isCancelErr {
 				content = "Error: user cancelled assistant tool calling"
-			} else if isPermissionErr {
-				content = "User denied permission"
 			}
 			toolResult := message.ToolResult{
 				ToolCallID: tc.ID,
@@ -532,8 +541,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		linkStyle := lipgloss.NewStyle().Foreground(charmtone.Guac).Underline(true)
 		if isCancelErr {
 			currentAssistant.AddFinish(message.FinishReasonCanceled, "User canceled request", "")
-		} else if isPermissionErr {
-			currentAssistant.AddFinish(message.FinishReasonPermissionDenied, "User denied permission", "")
 		} else if isHyper && errors.As(err, &providerErr) && providerErr.StatusCode == http.StatusUnauthorized {
 			currentAssistant.AddFinish(message.FinishReasonError, "Unauthorized", `Please re-authenticate with Hyper. You can also run "crush auth" to re-authenticate.`)
 			if a.notify != nil {
@@ -637,7 +644,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return nil
 	}
 
-	aiMsgs, _ := a.preparePrompt(msgs)
+	aiMsgs, _ := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages)
 
 	genCtx, cancel := context.WithCancel(ctx)
 	a.activeRequests.Set(sessionID, cancel)
@@ -697,6 +704,12 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
 			return deleteErr
 		}
+		// Mark the summary message as finished with an error so the UI
+		// stops spinning.
+		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", err.Error())
+		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 
@@ -726,7 +739,24 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	currentSession.CompletionTokens = usage.OutputTokens
 	currentSession.PromptTokens = 0
 	_, err = a.sessions.Save(genCtx, currentSession)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Release the active request before processing queued messages so that
+	// Run() does not see the session as busy.
+	a.activeRequests.Del(sessionID)
+	cancel()
+
+	// Process any messages that were queued while summarizing.
+	queuedMessages, ok := a.messageQueue.Get(sessionID)
+	if !ok || len(queuedMessages) == 0 {
+		return nil
+	}
+	firstQueuedMessage := queuedMessages[0]
+	a.messageQueue.Set(sessionID, queuedMessages[1:])
+	_, qErr := a.Run(ctx, firstQueuedMessage)
+	return qErr
 }
 
 func (a *sessionAgent) getCacheControlOptions() fantasy.ProviderOptions {
@@ -763,7 +793,7 @@ func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentC
 	return msg, nil
 }
 
-func (a *sessionAgent) preparePrompt(msgs []message.Message, attachments ...message.Attachment) ([]fantasy.Message, []fantasy.FilePart) {
+func (a *sessionAgent) preparePrompt(msgs []message.Message, supportsImages bool, attachments ...message.Attachment) ([]fantasy.Message, []fantasy.FilePart) {
 	var history []fantasy.Message
 	if !a.isSubAgent {
 		history = append(history, fantasy.NewUserMessage(
@@ -807,7 +837,15 @@ If not, please feel free to ignore. Again do not mention this message to the use
 			}
 			continue
 		}
-		history = append(history, m.ToAIMessage()...)
+		aiMsgs := m.ToAIMessage()
+		if !supportsImages {
+			for i := range aiMsgs {
+				if aiMsgs[i].Role == fantasy.MessageRoleUser {
+					aiMsgs[i].Content = filterFileParts(aiMsgs[i].Content)
+				}
+			}
+		}
+		history = append(history, aiMsgs...)
 
 		if m.Role == message.Assistant {
 			if msg, ok := syntheticToolResultsForOrphanedCalls(m, knownToolResultIDs); ok {
@@ -829,6 +867,20 @@ If not, please feel free to ignore. Again do not mention this message to the use
 	}
 
 	return history, files
+}
+
+// filterFileParts removes fantasy.FilePart entries from a slice of message
+// parts. Used to strip image attachments from historical user messages when
+// the current model does not support them.
+func filterFileParts(parts []fantasy.MessagePart) []fantasy.MessagePart {
+	filtered := make([]fantasy.MessagePart, 0, len(parts))
+	for _, part := range parts {
+		if _, ok := fantasy.AsMessagePart[fantasy.FilePart](part); ok {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return filtered
 }
 
 // filterOrphanedToolResults converts a tool message to a fantasy.Message,
@@ -1028,6 +1080,11 @@ func (a *sessionAgent) generateTitle(ctx context.Context, sessionID string, user
 		cost = *openrouterCost
 	}
 
+	// Skip cost accumulation
+	if model.FlatRate {
+		cost = 0
+	}
+
 	promptTokens := resp.TotalUsage.InputTokens + resp.TotalUsage.CacheCreationTokens
 	completionTokens := resp.TotalUsage.OutputTokens
 
@@ -1062,12 +1119,17 @@ func (a *sessionAgent) updateSessionUsage(model Model, session *session.Session,
 
 	a.eventTokensUsed(session.ID, model, usage, cost)
 
+	// Use override cost if available (e.g., from OpenRouter).
 	if overrideCost != nil {
-		session.Cost += *overrideCost
-	} else {
-		session.Cost += cost
+		cost = *overrideCost
 	}
 
+	// Skip cost accumulation
+	if model.FlatRate {
+		cost = 0
+	}
+
+	session.Cost += cost
 	session.CompletionTokens = usage.OutputTokens
 	session.PromptTokens = usage.InputTokens + usage.CacheReadTokens
 }
@@ -1317,4 +1379,21 @@ func buildSummaryPrompt(todos []session.Todo) string {
 		sb.WriteString("Instruct the resuming assistant to use the `todos` tool to continue tracking progress on these tasks.")
 	}
 	return sb.String()
+}
+
+func providerRetryLogFields(err *fantasy.ProviderError, delay time.Duration) []any {
+	fields := []any{
+		"retry_delay", delay.String(),
+	}
+	if err == nil {
+		return fields
+	}
+	fields = append(fields, "status_code", err.StatusCode)
+	if err.Title != "" {
+		fields = append(fields, "title", err.Title)
+	}
+	if err.Message != "" {
+		fields = append(fields, "message", err.Message)
+	}
+	return fields
 }
