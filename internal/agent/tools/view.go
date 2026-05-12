@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +59,15 @@ const (
 	DefaultReadLimit = 2000
 	MaxLineLength    = 2000
 )
+
+type contentTooLargeError struct {
+	Size int
+	Max  int
+}
+
+func (e contentTooLargeError) Error() string {
+	return fmt.Sprintf("content section is too large (%d bytes). Maximum size is %d bytes", e.Size, e.Max)
+}
 
 func NewViewTool(
 	lspManager *lsp.Manager,
@@ -161,12 +172,6 @@ func NewViewTool(
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Path is a directory, not a file: %s", filePath)), nil
 			}
 
-			// Based on the specifications we should not limit the skills read.
-			if !isSkillFile && fileInfo.Size() > MaxViewSize {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("File is too large (%d bytes). Maximum size is %d bytes",
-					fileInfo.Size(), MaxViewSize)), nil
-			}
-
 			// Set default limit if not provided (no limit for SKILL.md files)
 			if params.Limit <= 0 {
 				if isSkillFile {
@@ -178,6 +183,10 @@ func NewViewTool(
 
 			isSupportedImage, mimeType := getImageMimeType(filePath)
 			if isSupportedImage {
+				if fileInfo.Size() > MaxViewSize {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Image file is too large (%d bytes). Maximum size is %d bytes",
+						fileInfo.Size(), MaxViewSize)), nil
+				}
 				if !GetSupportsImagesFromContext(ctx) {
 					modelName := GetModelNameFromContext(ctx)
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("This model (%s) does not support image data.", modelName)), nil
@@ -188,12 +197,29 @@ func NewViewTool(
 					return fantasy.ToolResponse{}, fmt.Errorf("error reading image file: %w", readErr)
 				}
 
+				// Some tools save files with a mismatched extension
+				// (e.g. pinchtab writes JPEG bytes to a .png file).
+				// Providers like Anthropic strictly validate the
+				// media type against the base64 magic bytes and 400
+				// on mismatch, so prefer the sniffed type whenever
+				// it identifies a supported image format.
+				mimeType = sniffImageMimeType(imageData, mimeType)
+
 				return fantasy.NewImageResponse(imageData, mimeType), nil
 			}
 
 			// Read the file content
-			content, hasMore, err := readTextFile(filePath, params.Offset, params.Limit)
+			maxContentSize := MaxViewSize
+			if isSkillFile {
+				maxContentSize = 0
+			}
+			content, hasMore, err := readTextFile(filePath, params.Offset, params.Limit, maxContentSize)
 			if err != nil {
+				var tooLarge contentTooLargeError
+				if errors.As(err, &tooLarge) {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Content section is too large (%d bytes). Maximum size is %d bytes",
+						tooLarge.Size, tooLarge.Max)), nil
+				}
 				return fantasy.ToolResponse{}, fmt.Errorf("error reading file: %w", err)
 			}
 			if !utf8.ValidString(content) {
@@ -258,7 +284,7 @@ func addLineNumbers(content string, startLine int) string {
 	return strings.Join(result, "\n")
 }
 
-func readTextFile(filePath string, offset, limit int) (string, bool, error) {
+func readTextFile(filePath string, offset, limit, maxContentSize int) (string, bool, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", false, err
@@ -276,14 +302,22 @@ func readTextFile(filePath string, offset, limit int) (string, bool, error) {
 		}
 	}
 
-	// Pre-allocate slice with expected capacity.
-	lines := make([]string, 0, limit)
+	lines := make([]string, 0, min(limit, DefaultReadLimit))
+	contentSize := 0
 
 	for len(lines) < limit && scanner.Scan() {
 		lineText := scanner.Text()
 		if len(lineText) > MaxLineLength {
 			lineText = lineText[:MaxLineLength] + "..."
 		}
+		projectedSize := contentSize + len(lineText)
+		if len(lines) > 0 {
+			projectedSize++
+		}
+		if maxContentSize > 0 && projectedSize > maxContentSize {
+			return "", false, contentTooLargeError{Size: projectedSize, Max: maxContentSize}
+		}
+		contentSize = projectedSize
 		lines = append(lines, lineText)
 	}
 
@@ -311,6 +345,26 @@ func getImageMimeType(filePath string) (bool, string) {
 	default:
 		return false, ""
 	}
+}
+
+// sniffImageMimeType returns the content-sniffed MIME type when it identifies
+// a supported image format. Otherwise it returns the provided fallback, which
+// is usually the extension-derived type. Providers that validate the image
+// media type against the base64 magic bytes (e.g. Anthropic) reject mismatched
+// requests with a 400, so trusting the filename alone is unsafe.
+func sniffImageMimeType(data []byte, fallback string) string {
+	sniffed := http.DetectContentType(data)
+	// http.DetectContentType may return the MIME with a ";" parameter
+	// (e.g. "image/svg+xml; charset=utf-8") although current image sniffers
+	// return bare types; strip defensively.
+	if i := strings.IndexByte(sniffed, ';'); i >= 0 {
+		sniffed = strings.TrimSpace(sniffed[:i])
+	}
+	switch sniffed {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return sniffed
+	}
+	return fallback
 }
 
 type LineScanner struct {

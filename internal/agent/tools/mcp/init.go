@@ -457,29 +457,51 @@ func createTransport(ctx context.Context, name string, m config.MCPConfig, resol
 		if strings.TrimSpace(command) == "" {
 			return nil, fmt.Errorf("mcp stdio config requires a non-empty 'command' field")
 		}
-		cmd := exec.CommandContext(ctx, home.Long(command), m.Args...)
-		cmd.Env = append(os.Environ(), m.ResolvedEnv()...)
+		args, err := m.ResolvedArgs(resolver)
+		if err != nil {
+			return nil, err
+		}
+		envs, err := m.ResolvedEnv(resolver)
+		if err != nil {
+			return nil, err
+		}
+		cmd := exec.CommandContext(ctx, home.Long(command), args...)
+		cmd.Env = append(os.Environ(), envs...)
 		return &mcp.CommandTransport{
 			Command: cmd,
 		}, nil
 	case config.MCPHttp:
-		if strings.TrimSpace(m.URL) == "" {
+		url, err := m.ResolvedURL(resolver)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(url) == "" {
 			return nil, fmt.Errorf("mcp http config requires a non-empty 'url' field")
 		}
-		transport := buildHTTPTransport(ctx, name, m, tokenStore)
+		transport, err := buildHTTPTransport(ctx, name, m, resolver, tokenStore)
+		if err != nil {
+			return nil, err
+		}
 		client := &http.Client{Transport: transport}
 		return &mcp.StreamableClientTransport{
-			Endpoint:   m.URL,
+			Endpoint:   url,
 			HTTPClient: client,
 		}, nil
 	case config.MCPSSE:
-		if strings.TrimSpace(m.URL) == "" {
+		url, err := m.ResolvedURL(resolver)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(url) == "" {
 			return nil, fmt.Errorf("mcp sse config requires a non-empty 'url' field")
 		}
-		transport := buildHTTPTransport(ctx, name, m, tokenStore)
+		transport, err := buildHTTPTransport(ctx, name, m, resolver, tokenStore)
+		if err != nil {
+			return nil, err
+		}
 		client := &http.Client{Transport: transport}
 		return &mcp.SSEClientTransport{
-			Endpoint:   m.URL,
+			Endpoint:   url,
 			HTTPClient: client,
 		}, nil
 	default:
@@ -489,21 +511,25 @@ func createTransport(ctx context.Context, name string, m config.MCPConfig, resol
 
 // buildHTTPTransport creates an http.RoundTripper with appropriate middleware.
 // It stacks OAuth (if configured or discovered) on top of static headers.
-func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, tokenStore *TokenStore) http.RoundTripper {
+func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver, tokenStore *TokenStore) (http.RoundTripper, error) {
 	transport := http.DefaultTransport
 
-	// Add static headers layer
+	// Add static headers layer.
 	if len(m.Headers) > 0 {
+		headers, err := m.ResolvedHeaders(resolver)
+		if err != nil {
+			return nil, err
+		}
 		transport = &headerRoundTripper{
-			headers: m.ResolvedHeaders(),
+			headers: headers,
 			base:    transport,
 		}
 	}
 
-	// Skip OAuth if explicitly disabled
+	// Skip OAuth if explicitly disabled.
 	if !m.OAuth.IsEnabled() {
 		slog.Debug("OAuth disabled for MCP", "name", name)
-		return transport
+		return transport, nil
 	}
 
 	// Resolve OAuth configuration (explicit or auto-discovered)
@@ -514,7 +540,7 @@ func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, to
 		provider, err := NewOAuthTokenProvider(name, *oauthCfg, tokenStore)
 		if err != nil {
 			slog.Error("Failed to create OAuth provider", "mcp", name, "error", err)
-			return transport // Fall back to non-OAuth transport
+			return transport, nil // Fall back to non-OAuth transport
 		}
 
 		// Set up the auth function immediately so it's available when needed
@@ -545,7 +571,7 @@ func buildHTTPTransport(ctx context.Context, name string, m config.MCPConfig, to
 		transport = NewOAuthRoundTripper(provider, transport)
 	}
 
-	return transport
+	return transport, nil
 }
 
 // resolveOAuthConfig returns the OAuth configuration for an MCP server.

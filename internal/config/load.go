@@ -55,6 +55,9 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 
 	// Load workspace config last so it has highest priority.
 	if wsData, err := os.ReadFile(store.workspacePath); err == nil && len(wsData) > 0 {
+		if !json.Valid(wsData) {
+			return nil, fmt.Errorf("invalid JSON in config file %s", store.workspacePath)
+		}
 		merged, mergeErr := loadFromBytes(append([][]byte{mustMarshalConfig(cfg)}, wsData))
 		if mergeErr == nil {
 			// Preserve defaults that setDefaults already applied.
@@ -223,10 +226,19 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 		if len(config.ExtraHeaders) > 0 {
 			maps.Copy(headers, config.ExtraHeaders)
 		}
+		// Provider headers use the same error contract as MCP headers:
+		// a failing $(...) aborts the provider load with a clear
+		// message, and a header that resolves to the empty string
+		// (unset bare $VAR under lenient nounset, $(echo), or literal
+		// "") is dropped from the outgoing request. See PLAN.md
+		// Phase 2 design decisions #14 and #18.
 		for k, v := range headers {
 			resolved, err := resolver.ResolveValue(v)
 			if err != nil {
-				slog.Error("Could not resolve provider header", "err", err.Error())
+				return fmt.Errorf("resolving provider %s header %q: %w", p.ID, k, err)
+			}
+			if resolved == "" {
+				delete(headers, k)
 				continue
 			}
 			headers[k] = resolved
@@ -378,10 +390,16 @@ func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver Va
 			continue
 		}
 
+		// Custom-provider headers share the MCP error contract; see
+		// the known-provider loop above and PLAN.md Phase 2 design
+		// decisions #14 and #18.
 		for k, v := range providerConfig.ExtraHeaders {
 			resolved, err := resolver.ResolveValue(v)
 			if err != nil {
-				slog.Error("Could not resolve provider header", "err", err.Error())
+				return fmt.Errorf("resolving provider %s header %q: %w", id, k, err)
+			}
+			if resolved == "" {
+				delete(providerConfig.ExtraHeaders, k)
 				continue
 			}
 			providerConfig.ExtraHeaders[k] = resolved
@@ -720,6 +738,9 @@ func loadFromConfigPaths(configPaths []string) (*Config, []string, error) {
 		}
 		if len(data) == 0 {
 			continue
+		}
+		if !json.Valid(data) {
+			return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
 		}
 		configs = append(configs, data)
 		loaded = append(loaded, path)
