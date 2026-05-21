@@ -1,6 +1,6 @@
 ---
 name: update-crush-catwalk
-description: Sync the puffitos/catwalk and puffitos/crush forks with their upstream charmbracelet repositories, preserving our custom AWS Bedrock inference-profile changes. Creates a new awsfix tag in catwalk, updates the go.mod replace directive in crush, rebuilds crush, and installs the binary. Use when the user wants to update crush or catwalk from upstream, bump versions, or install a fresh build.
+description: Sync the puffitos/catwalk and puffitos/crush forks with their upstream charmbracelet repositories, preserving our custom AWS Bedrock inference-profile changes. Creates new awsfix tags in both repos, updates the go.mod replace directive in crush, rebuilds crush via the Taskfile (which embeds the version via ldflags), and installs the binary. Use when the user wants to update crush or catwalk from upstream, bump versions, or install a fresh build.
 ---
 
 # Update crush and catwalk forks from upstream
@@ -10,10 +10,41 @@ upstream while preserving our custom AWS Bedrock inference-profile patches.
 
 ## Repositories
 
-| Repo | Local path | Remote (fork) | Remote (upstream) |
-|------|-----------|---------------|-------------------|
-| catwalk | `/home/bbressi/dev/repos/catwalk` | `origin` → `github.com/puffitos/catwalk` | `upstream` → `github.com/charmbracelet/catwalk` |
-| crush | `/home/bbressi/dev/repos/crush` | `fork` → `github.com/puffitos/crush` | `origin` → `github.com/charmbracelet/crush` |
+| Repo | Remote (fork) | Remote (upstream) |
+|------|---------------|-------------------|
+| catwalk | `origin` → `github.com/puffitos/catwalk` | `upstream` → `github.com/charmbracelet/catwalk` |
+| crush | `fork` → `github.com/puffitos/crush` | `origin` → `github.com/charmbracelet/crush` |
+
+## Locating the repos
+
+Do **not** hardcode paths. Resolve them at runtime:
+
+1. The crush repo is the current working directory (this skill runs from
+   inside it). Confirm with `git remote -v` — `origin` should point to
+   `charmbracelet/crush` and `fork` to `puffitos/crush`.
+2. The catwalk repo lives as a sibling in the same parent folder. Search for
+   it before doing anything else:
+
+   ```bash
+   CRUSH_DIR=$(git rev-parse --show-toplevel)
+   PARENT=$(dirname "$CRUSH_DIR")
+   CATWALK_DIR=""
+   for candidate in "$PARENT/catwalk" "$PARENT"/*/catwalk; do
+     if [ -d "$candidate/.git" ] && \
+        git -C "$candidate" remote get-url upstream 2>/dev/null | grep -q charmbracelet/catwalk; then
+       CATWALK_DIR="$candidate"
+       break
+     fi
+   done
+   echo "crush:   $CRUSH_DIR"
+   echo "catwalk: ${CATWALK_DIR:-<not found>}"
+   ```
+
+3. If `CATWALK_DIR` is empty, **stop and ask the user** for the absolute path
+   to their local catwalk checkout before continuing. Do not guess.
+
+Use `$CRUSH_DIR` and `$CATWALK_DIR` in place of literal paths throughout the
+rest of this skill.
 
 ## Overview
 
@@ -38,7 +69,7 @@ Our forks carry the following custom changes (tracked in `DRIFT.md` for crush):
 ### 1.1 Fetch upstream
 
 ```bash
-cd /home/bbressi/dev/repos/catwalk
+cd "$CATWALK_DIR"
 git fetch upstream
 ```
 
@@ -114,7 +145,7 @@ git push origin v<version>-awsfix
 ### 2.1 Fetch upstream
 
 ```bash
-cd /home/bbressi/dev/repos/crush
+cd "$CRUSH_DIR"
 git fetch origin   # origin = charmbracelet/crush (upstream)
 ```
 
@@ -162,21 +193,51 @@ git add go.mod go.sum
 git commit -m "chore(deps): bump catwalk to v<version>-awsfix"
 ```
 
-### 2.6 Push to fork
+### 2.6 Tag the crush fork
+
+Create a matching annotated tag at HEAD. The Taskfile uses `git describe --long`
+to resolve `VERSION` for `-ldflags`, so an annotated tag is required for the
+built binary to report the correct version (`crush --version`). A pre-existing
+tag must be **deleted and recreated as annotated** if it was originally
+lightweight.
+
+```bash
+# If an older lightweight tag exists for this version, remove it first:
+git tag -d v<version>-awsfix 2>/dev/null
+
+git tag -a v<version>-awsfix -m "awsfix sync with upstream v<version>"
+git describe --long   # should print v<version>-awsfix-0-g<sha>
+```
+
+### 2.7 Push to fork
 
 ```bash
 git push fork main
+git push fork v<version>-awsfix
 ```
 
 ---
 
 ## Step 3 — Build and install crush
 
+Use the Taskfile so the version is baked in via `-ldflags`. The Taskfile
+resolves `VERSION` from `git describe --long`, which depends on the annotated
+tag from Step 2.6.
+
 ```bash
-cd /home/bbressi/dev/repos/crush
-CGO_ENABLED=0 GOEXPERIMENT=greenteagc go build -o "$(which crush)" .
-crush --version   # verify
+cd "$CRUSH_DIR"
+rm -rf .task crush   # bust task's source-hash cache from prior builds
+task build
+./crush --version    # verify it reports v<version>-awsfix-0-g<sha>
+mv crush "$(which crush)"
+crush --version      # verify installed binary
 ```
+
+> **Why this matters**: Go 1.24+ embeds a VCS-derived pseudo-version into
+> `debug.ReadBuildInfo().Main.Version` for plain `go build`. `internal/version/version.go`
+> only honors `-ldflags` when `Version` is still `"devel"`, so building without
+> the Taskfile (or without the annotated tag) produces a misleading
+> `v<prev>.X-0.<timestamp>-<sha>` pseudo-version instead of `v<version>-awsfix`.
 
 ---
 
@@ -198,7 +259,7 @@ If conflicts remain, open the conflicted files and ensure:
 The tag must be pushed to `github.com/puffitos/catwalk` **before** running
 `go mod tidy`. Check with:
 ```bash
-git -C /home/bbressi/dev/repos/catwalk tag --list | grep awsfix
+git -C "$CATWALK_DIR" tag --list | grep awsfix
 ```
 
 ### Build error: `assignment mismatch` in `providers.go`
