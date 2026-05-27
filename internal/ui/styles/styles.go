@@ -43,6 +43,7 @@ const (
 
 	ImageIcon string = "■"
 	TextIcon  string = "≡"
+	SkillIcon string = "▲"
 
 	ScrollbarThumb string = "┃"
 	ScrollbarTrack string = "│"
@@ -291,6 +292,10 @@ type Styles struct {
 		ErrorTag     lipgloss.Style // ERROR tag
 		ErrorMessage lipgloss.Style // Error message text
 
+		// Warning styles (used for permission denied)
+		WarnTag     lipgloss.Style // WARN tag
+		WarnMessage lipgloss.Style // Warning message text
+
 		// Diff styles
 		DiffTruncation lipgloss.Style // Diff truncation message with padding
 
@@ -502,6 +507,7 @@ type Styles struct {
 		Normal   lipgloss.Style
 		Image    lipgloss.Style
 		Text     lipgloss.Style
+		Skill    lipgloss.Style
 		Deleting lipgloss.Style
 	}
 
