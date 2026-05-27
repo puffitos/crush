@@ -859,12 +859,6 @@ func (c *coordinator) buildBedrockProvider(apiKey string, headers map[string]str
 		// Skip, let the SDK do authentication.
 	}
 
-	switch providerID {
-	case string(catwalk.InferenceProviderBedrockEurope):
-		opts = append(opts, bedrock.WithRegion("eu-west-1"))
-	default:
-		opts = append(opts, bedrock.WithRegion("us-east-1"))
-	}
 
 	return bedrock.New(opts...)
 }
