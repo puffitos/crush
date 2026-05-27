@@ -28,6 +28,7 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/integrations/wakatime"
+	"github.com/charmbracelet/crush/internal/integrations/zellij"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
@@ -98,6 +99,7 @@ type coordinator struct {
 	notify      pubsub.Publisher[notify.Notification]
 
 	wakatimeHook *wakatime.Hook
+	zellijNotif  *zellij.Service
 
 	currentAgent SessionAgent
 	agents       map[string]SessionAgent
@@ -148,6 +150,16 @@ func NewCoordinator(
 		allSkills:    allSkills,
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
+	}
+
+	// Initialize Zellij notifier if enabled.
+	if cfg.Config().ZellijNotifications != nil && cfg.Config().ZellijNotifications.Enabled {
+		zellijSvc, err := zellij.New(zellij.Config{
+			Enabled: true,
+		})
+		if err == nil && zellijSvc != nil {
+			c.zellijNotif = zellijSvc
+		}
 	}
 
 	// Initialize WakaTime hook if enabled.
@@ -238,6 +250,8 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		})
 	}
 	beforeLoaded := c.skillTracker.LoadedNames()
+	c.zellijNotif.Notify(zellij.StateWaiting)
+	defer c.zellijNotif.Notify(zellij.StateCompleted)
 	result, originalErr := run()
 	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
 

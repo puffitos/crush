@@ -35,6 +35,21 @@ detection, and nil-safe service design.
 | `c146db21` | feat(integrations): add WakaTime time tracking integration |
 | `b0b12930` | fix: remove duplicate WakaTime field after rebase |
 
+## Zellij Notifications
+
+Optional integration with the
+[zellij-attention](https://github.com/KiryuuLight/zellij-attention)
+plugin. When `zellij_notifications.enabled` is true (default: false)
+and Crush is running inside a Zellij pane, the coordinator runs
+`zellij pipe --name "zellij-attention::waiting::$ZELLIJ_PANE_ID"`
+when a turn starts and `...::completed::...` when it finishes,
+so the pane/tab can blink while Crush works and stop blinking when
+it waits for user input.
+
+| Commit | Description |
+|--------|-------------|
+| _local_ | feat(integrations): add optional zellij-attention notifications |
+
 ## Bedrock Region Prefix Fix
 
 Uses catwalk's `PrefixModelIDs` method (added in our catwalk fork

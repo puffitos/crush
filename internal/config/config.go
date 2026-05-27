@@ -254,6 +254,18 @@ type TUIOptions struct {
 	Transparent *bool       `json:"transparent,omitempty" jsonschema:"description=Enable transparent background for the TUI interface,default=false"`
 }
 
+// ZellijNotificationsConfig holds configuration for the Zellij notification
+// integration. When enabled, Crush sends a `zellij pipe` message to the
+// current pane on each agent turn boundary so the zellij-attention plugin
+// can highlight the tab while Crush is working or waiting for input.
+//
+// Requires the zellij-attention plugin:
+// https://github.com/KiryuuLight/zellij-attention.
+type ZellijNotificationsConfig struct {
+	// Enabled controls whether Zellij notifications are sent.
+	Enabled bool `json:"enabled,omitempty" jsonschema:"description=Enable Zellij notification integration via zellij-attention,default=false"`
+}
+
 // WakaTimeConfig holds configuration for WakaTime integration.
 type WakaTimeConfig struct {
 	// Enabled controls whether WakaTime tracking is enabled.
@@ -630,6 +642,8 @@ type Config struct {
 	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
 
 	WakaTime *WakaTimeConfig `json:"wakatime,omitempty" jsonschema:"description=WakaTime time tracking configuration"`
+
+	ZellijNotifications *ZellijNotificationsConfig `json:"zellij_notifications,omitempty" jsonschema:"description=Zellij notification integration (requires zellij-attention plugin: https://github.com/KiryuuLight/zellij-attention)"`
 
 	Hooks map[string][]HookConfig `json:"hooks,omitempty" jsonschema:"description=User-defined shell commands that fire on hook events (e.g. PreToolUse)"`
 

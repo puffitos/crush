@@ -1,280 +1,126 @@
 ---
 name: update-crush-catwalk
-description: Sync the puffitos/catwalk and puffitos/crush forks with their upstream charmbracelet repositories, preserving our custom AWS Bedrock inference-profile changes. Creates new awsfix tags in both repos, updates the go.mod replace directive in crush, rebuilds crush via the Taskfile (which embeds the version via ldflags), and installs the binary. Use when the user wants to update crush or catwalk from upstream, bump versions, or install a fresh build.
+description: Sync the puffitos/crush fork with upstream charmbracelet/crush, ignoring any local catwalk fork. Updates crush from upstream, preserves our fork-only changes, rebuilds via the Taskfile (which embeds the version via ldflags), and installs the binary. Use when the user wants to update crush from upstream, bump versions, or install a fresh build.
 ---
 
-# Update crush and catwalk forks from upstream
+# Update crush fork from upstream
 
-This skill keeps the `puffitos/catwalk` and `puffitos/crush` forks in sync with
-upstream while preserving our custom AWS Bedrock inference-profile patches.
+This skill keeps the `puffitos/crush` fork in sync with upstream while
+preserving our fork-only changes.
 
-## Repositories
+## Repository
 
 | Repo | Remote (fork) | Remote (upstream) |
 |------|---------------|-------------------|
-| catwalk | `origin` → `github.com/puffitos/catwalk` | `upstream` → `github.com/charmbracelet/catwalk` |
 | crush | `fork` → `github.com/puffitos/crush` | `origin` → `github.com/charmbracelet/crush` |
 
-## Locating the repos
+## Locating the repo
 
-Do **not** hardcode paths. Resolve them at runtime:
+Do **not** hardcode paths. Resolve the repository at runtime:
 
-1. The crush repo is the current working directory (this skill runs from
-   inside it). Confirm with `git remote -v` — `origin` should point to
-   `charmbracelet/crush` and `fork` to `puffitos/crush`.
-2. The catwalk repo lives as a sibling in the same parent folder. Search for
-   it before doing anything else:
+```bash
+CRUSH_DIR=$(git rev-parse --show-toplevel)
+echo "crush: $CRUSH_DIR"
+git -C "$CRUSH_DIR" remote -v
+```
 
-   ```bash
-   CRUSH_DIR=$(git rev-parse --show-toplevel)
-   PARENT=$(dirname "$CRUSH_DIR")
-   CATWALK_DIR=""
-   for candidate in "$PARENT/catwalk" "$PARENT"/*/catwalk; do
-     if [ -d "$candidate/.git" ] && \
-        git -C "$candidate" remote get-url upstream 2>/dev/null | grep -q charmbracelet/catwalk; then
-       CATWALK_DIR="$candidate"
-       break
-     fi
-   done
-   echo "crush:   $CRUSH_DIR"
-   echo "catwalk: ${CATWALK_DIR:-<not found>}"
-   ```
-
-3. If `CATWALK_DIR` is empty, **stop and ask the user** for the absolute path
-   to their local catwalk checkout before continuing. Do not guess.
-
-Use `$CRUSH_DIR` and `$CATWALK_DIR` in place of literal paths throughout the
-rest of this skill.
+Confirm `origin` points to `charmbracelet/crush` and `fork` points to
+`puffitos/crush`.
 
 ## Overview
 
-Our forks carry the following custom changes (tracked in `DRIFT.md` for crush):
+Our fork carries the following custom changes (tracked in `DRIFT.md`):
 
-**catwalk** (`internal/providers/providers.go`, `internal/providers/configs/bedrock.json`):
-- `bedrockProvider()` reads `AWS_REGION` / `AWS_DEFAULT_REGION` and prefixes
-  model IDs with the correct cross-region inference profile prefix
-  (`us.`, `eu.`, `jp.`, `au.`, `global.`).
-- `bedrock.json` models carry a `"regions"` array listing which prefixes they
-  support.
+- Bedrock provider tweaks in `internal/config/`
+- MCP OAuth 2.0 support in `internal/oauth/mcp/`
+- WakaTime integration in `internal/integrations/wakatime/`
+- Zellij notifications in `internal/integrations/zellij/`
+- OAuth browser-fallback notice in `internal/ui/dialog/oauth_notice.go`
 
-**crush** (`internal/config/`, `go.mod`):
-- `go.mod` replaces `charm.land/catwalk` with `github.com/puffitos/catwalk@<tag>`.
-- Bedrock model lookup adapted to prefixed IDs.
-- MCP OAuth 2.0 support, WakaTime integration, OAuth browser-fallback notice.
+`catwalk` should now follow upstream directly. Do **not** update or depend on
+any local `catwalk` fork, and do **not** add a `replace charm.land/catwalk =>`
+line unless the user explicitly asks.
 
 ---
 
-## Step 1 — Update catwalk fork
-
-### 1.1 Fetch upstream
-
-```bash
-cd "$CATWALK_DIR"
-git fetch upstream
-```
-
-### 1.2 Identify custom changes
-
-Save a patch of our changes relative to the common ancestor:
-
-```bash
-MERGE_BASE=$(git merge-base upstream/main origin/main)
-git diff "$MERGE_BASE"..origin/main \
-  -- internal/providers/configs/bedrock.json \
-     internal/providers/providers.go \
-     pkg/catwalk/provider.go \
-  > /tmp/catwalk-custom.patch
-```
-
-### 1.3 Reset to upstream
-
-```bash
-git reset --hard upstream/main
-```
-
-### 1.4 Apply custom patch
-
-```bash
-git apply --3way /tmp/catwalk-custom.patch
-```
-
-Resolve any conflicts manually. Key invariants to preserve:
-- `bedrockProvider()` in `providers.go` must read `AWS_REGION`/`AWS_DEFAULT_REGION`
-  and call `bedrockRegionPrefix()` to prefix model IDs.
-- `bedrock.json` models must carry `"regions": [...]` arrays.
-- If `pkg/catwalk/provider.go` needs a `Regions []string` field on `Model`,
-  add it — but note that `providers.go` uses an inline struct to parse JSON
-  and does **not** require the field on `catwalk.Model`.
-
-### 1.5 Build and test
-
-```bash
-go build ./...
-go test ./...
-```
-
-### 1.6 Commit and tag
-
-Determine the new tag. Pattern is `v<upstream-version>-awsfix`. Check the
-latest upstream tag:
-
-```bash
-git describe --tags upstream/main --abbrev=0
-# e.g. v0.34.3  →  new tag: v0.34.3-awsfix
-```
-
-```bash
-git add internal/providers/configs/bedrock.json \
-        internal/providers/providers.go \
-        pkg/catwalk/provider.go   # if changed
-git commit -m "chore: sync with upstream <version>, preserve bedrock inference profile fixes"
-git tag v<version>-awsfix
-```
-
-### 1.7 Push to fork
-
-```bash
-git push --force-with-lease origin main
-git push origin v<version>-awsfix
-```
-
----
-
-## Step 2 — Update crush fork
-
-### 2.1 Fetch upstream
+## Step 1 — Pull fork first
 
 ```bash
 cd "$CRUSH_DIR"
-git fetch origin   # origin = charmbracelet/crush (upstream)
+git pull fork main
 ```
 
-### 2.2 Merge upstream
+This keeps local work aligned with the fork before merging upstream.
+
+## Step 2 — Fetch upstream
+
+```bash
+git fetch origin
+```
+
+## Step 3 — Merge upstream
 
 ```bash
 git merge origin/main
 ```
 
-Resolve any conflicts. Our custom files are in:
-- `internal/config/provider.go` — bedrock region prefix logic
-- `internal/config/load.go` — catwalk `ApplyBedrockRegion` call
-- `internal/oauth/mcp/` — MCP OAuth 2.0
-- `internal/integrations/wakatime/` — WakaTime
-- `internal/ui/dialog/oauth_notice.go` — OAuth browser fallback dialog
-- `go.mod` — `replace charm.land/catwalk => github.com/puffitos/catwalk <tag>`
+Resolve any conflicts while preserving the fork-only changes listed above.
 
-### 2.3 Bump catwalk dependency
+## Step 4 — Ensure catwalk uses upstream
 
-Edit `go.mod` — update the `replace` directive to the new awsfix tag:
-
-```
-replace charm.land/catwalk => github.com/puffitos/catwalk v<version>-awsfix
-```
-
-Then run:
+Inspect `go.mod`. If a `replace charm.land/catwalk => ...` directive exists,
+remove it, then run:
 
 ```bash
 go mod tidy
 ```
 
-Verify `go.sum` now contains the new `github.com/puffitos/catwalk` entry.
+Verify `go.mod` now depends on upstream `charm.land/catwalk` only.
 
-### 2.4 Build and test
+## Step 5 — Build and test
 
 ```bash
 go build ./...
 go test ./...
 ```
 
-### 2.5 Commit
-
-```bash
-git add go.mod go.sum
-git commit -m "chore(deps): bump catwalk to v<version>-awsfix"
-```
-
-### 2.6 Tag the crush fork
-
-Create a matching annotated tag at HEAD. The Taskfile uses `git describe --long`
-to resolve `VERSION` for `-ldflags`, so an annotated tag is required for the
-built binary to report the correct version (`crush --version`). A pre-existing
-tag must be **deleted and recreated as annotated** if it was originally
-lightweight.
-
-```bash
-# If an older lightweight tag exists for this version, remove it first:
-git tag -d v<version>-awsfix 2>/dev/null
-
-git tag -a v<version>-awsfix -m "awsfix sync with upstream v<version>"
-git describe --long   # should print v<version>-awsfix-0-g<sha>
-```
-
-### 2.7 Push to fork
+## Step 6 — Push to fork
 
 ```bash
 git push fork main
-git push fork v<version>-awsfix
 ```
 
 ---
 
-## Step 3 — Build and install crush
+## Step 7 — Build and install crush
 
-Use the Taskfile so the version is baked in via `-ldflags`. The Taskfile
-resolves `VERSION` from `git describe --long`, which depends on the annotated
-tag from Step 2.6.
+Use the Taskfile so the version is baked in via `-ldflags`.
 
 ```bash
 cd "$CRUSH_DIR"
-rm -rf .task crush   # bust task's source-hash cache from prior builds
+rm -rf .task crush
 task build
-./crush --version    # verify it reports v<version>-awsfix-0-g<sha>
+./crush --version
 mv crush "$(which crush)"
-crush --version      # verify installed binary
+crush --version
 ```
-
-> **Why this matters**: Go 1.24+ embeds a VCS-derived pseudo-version into
-> `debug.ReadBuildInfo().Main.Version` for plain `go build`. `internal/version/version.go`
-> only honors `-ldflags` when `Version` is still `"devel"`, so building without
-> the Taskfile (or without the annotated tag) produces a misleading
-> `v<prev>.X-0.<timestamp>-<sha>` pseudo-version instead of `v<version>-awsfix`.
 
 ---
 
 ## Troubleshooting
 
-### `go apply` patch fails with "does not apply"
+### Merge blocked by local changes
 
-Use `--3way` flag:
-```bash
-git apply --3way /tmp/catwalk-custom.patch
-```
+If the working tree contains local modifications, preserve them first (for
+example by committing them on the fork branch) before merging upstream.
+Do not discard user work.
 
-If conflicts remain, open the conflicted files and ensure:
-1. `bedrockProvider()` body is our custom version (not just `return loadProviderFromConfig(bedrockConfig)`).
-2. `bedrock.json` models have `"regions": [...]`.
+### `go mod tidy` changes catwalk versions
 
-### `go mod tidy` fails to download new catwalk tag
+That is expected now. We no longer pin a forked `catwalk`; upstream
+`charm.land/catwalk` should win.
 
-The tag must be pushed to `github.com/puffitos/catwalk` **before** running
-`go mod tidy`. Check with:
-```bash
-git -C "$CATWALK_DIR" tag --list | grep awsfix
-```
+### Installed binary reports an older version
 
-### Build error: `assignment mismatch` in `providers.go`
-
-This means `catwalk.Model.Regions` type mismatch. Our `providers.go` uses
-`[]string` for regions (parsed from an inline struct), not `map[string]string`.
-Ensure `pkg/catwalk/provider.go` — if it has a `Regions` field — declares it
-as `[]string`, not `map[string]string`.
-
-### Rebase vs. merge strategy
-
-Do **not** use `git rebase` on the catwalk fork — our branch has many
-intermediate commits that conflict with upstream's equivalent commits
-(they look identical but have diverged hashes). The correct strategy is:
-
-1. Save the diff from the common ancestor.
-2. Hard-reset to `upstream/main`.
-3. Apply the saved diff with `--3way`.
+Rebuild with `task build` and replace the active binary. Plain `go build`
+may leave a misleading pseudo-version in the binary metadata.
